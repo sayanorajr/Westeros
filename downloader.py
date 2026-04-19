@@ -1,108 +1,139 @@
-import customtkinter as ctk
+import tkinter as tk
 from tkinter import filedialog, messagebox
+import customtkinter as ctk
 import subprocess
 import threading
 import os
-import sys
+import re
+import urllib.request
+import zipfile
 
+# Görünüm Ayarları
 ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("green")
+ctk.set_default_color_theme("blue")
 
-class WesterosDownloader(ctk.CTk):
+class MegaDownloader(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Westeros Media Downloader")
-        self.geometry("500x450")
+
+        self.title("Media Master Pro")
+        self.geometry("600x550")
+
+        # --- Arayüz ---
+        ctk.CTkLabel(self, text="Media Master", font=("Arial", 28, "bold")).pack(pady=25)
         
-        # UI Elemanları
-        self.label = ctk.CTkLabel(self, text="Westeros Downloader", font=("Arial", 22, "bold"))
-        self.label.pack(pady=20)
+        # Senin istediğin o sade kontrol mesajı burada görünecek
+        self.check_label = ctk.CTkLabel(self, text="Sistem kontrol ediliyor...", text_color="gray")
+        self.check_label.pack(pady=5)
 
-        self.link_entry = ctk.CTkEntry(self, placeholder_text="Link yapıştırın...", width=400)
-        self.link_entry.pack(pady=10)
-        self.link_entry.bind("<KeyRelease>", self.on_link_paste)
+        self.entry = ctk.CTkEntry(self, placeholder_text="Link Yapıştır...", width=480, height=40)
+        self.entry.pack(pady=10)
 
-        self.options_frame = ctk.CTkFrame(self)
-        self.options_frame.pack(pady=10, fill="x", px=20)
-        
-        self.res_var = ctk.StringVar(value="Seçenekler Bekleniyor...")
-        self.res_menu = ctk.CTkOptionMenu(self.options_frame, variable=self.res_var, values=["Önce link yapıştırın"])
-        self.res_menu.pack(pady=10)
+        self.mode_var = ctk.StringVar(value="video")
+        self.radio_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.radio_frame.pack(pady=10)
+        ctk.CTkRadioButton(self.radio_frame, text="Video (MP4)", variable=self.mode_var, value="video").pack(side="left", padx=20)
+        ctk.CTkRadioButton(self.radio_frame, text="Müzik (MP3)", variable=self.mode_var, value="audio").pack(side="left", padx=20)
 
-        self.download_btn = ctk.CTkButton(self, text="İNDİRMEYİ BAŞLAT", command=self.start_download, state="disabled")
+        self.progress_label = ctk.CTkLabel(self, text="İşlem bekleniyor...", font=("Arial", 12))
+        self.progress_label.pack(pady=(20, 5))
+
+        self.progress_bar = ctk.CTkProgressBar(self, width=450)
+        self.progress_bar.set(0)
+        self.progress_bar.pack(pady=10)
+
+        self.path_btn = ctk.CTkButton(self, text="📁 Kayıt Yerini Seç", command=self.select_folder)
+        self.path_btn.pack(pady=15)
+        self.folder_path = ""
+
+        # Başta tıklanamaz, kontrol bitince açılacak
+        self.download_btn = ctk.CTkButton(self, text="İNDİRMEYİ BAŞLAT", command=self.start_download, height=50, state="disabled")
         self.download_btn.pack(pady=20)
 
-        self.status = ctk.CTkLabel(self, text="Sistem kontrol ediliyor...", text_color="yellow")
-        self.status.pack(pady=10)
+        # OTOMATİK KONTROLÜ BAŞLAT
+        threading.Thread(target=self.auto_setup, daemon=True).start()
 
-        # Açılışta bileşen kontrolü
-        threading.Thread(target=self.check_requirements, daemon=True).start()
+    def auto_setup(self):
+        """yt-dlp ve ffmpeg'i sessizce kuran o meşhur fonksiyon"""
+        ytdlp_url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+        ffmpeg_url = "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffmpeg-4.4.1-win-64.zip"
+        
+        # Dosyalar eksik mi?
+        need_ytdlp = not os.path.exists("yt-dlp.exe")
+        need_ffmpeg = not os.path.exists("ffmpeg.exe")
 
-    def check_requirements(self):
-        """FFmpeg ve bileşen kontrolü yapar, gerekirse kurar."""
-        try:
-            # Siyah ekran çıkmaması için CREATE_NO_WINDOW ekliyoruz
-            subprocess.run(["ffmpeg", "-version"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            self.status.configure(text="Sistem Hazır", text_color="green")
-        except FileNotFoundError:
-            self.status.configure(text="Gerekli bileşenler kuruluyor... Lütfen bekleyin.", text_color="orange")
-            # Burada normalde brew/apt veya direkt binary çekme kodu olur
-            # Windows için en basiti yt-dlp'nin kendi otomatik güncelleyicisini tetiklemek
-            subprocess.run(["pip", "install", "static-ffmpeg"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            self.status.configure(text="Kurulum tamamlandı. Hazır!", text_color="green")
+        if need_ytdlp or need_ffmpeg:
+            self.check_label.configure(text="Gerekli bileşenler kuruluyor...", text_color="orange")
+            try:
+                # yt-dlp indir
+                if need_ytdlp:
+                    urllib.request.urlretrieve(ytdlp_url, "yt-dlp.exe")
+                
+                # ffmpeg indir ve zipten çıkar
+                if need_ffmpeg:
+                    urllib.request.urlretrieve(ffmpeg_url, "ffmpeg.zip")
+                    with zipfile.ZipFile("ffmpeg.zip", 'r') as zip_ref:
+                        zip_ref.extractall(".")
+                    if os.path.exists("ffmpeg.zip"):
+                        os.remove("ffmpeg.zip")
+                
+                self.check_label.configure(text="Gerekli bileşenler hazır.", text_color="green")
+            except:
+                self.check_label.configure(text="Bağlantı hatası! İnternetinizi kontrol edin.", text_color="red")
+                return
+        else:
+            self.check_label.configure(text="Gerekli bileşenler hazır.", text_color="green")
+        
+        # Her şey tamamsa butonu aktif et
+        self.download_btn.configure(state="normal")
 
-    def on_link_paste(self, event):
-        url = self.link_entry.get()
-        if len(url) > 10:
-            threading.Thread(target=self.get_formats, args=(url,), daemon=True).start()
-
-    def get_formats(self, url):
-        """Link yapıştırıldığında çözünürlükleri çeker."""
-        self.status.configure(text="Seçenekler taranıyor...", text_color="yellow")
-        try:
-            # Siyah ekran yok: creationflags=subprocess.CREATE_NO_WINDOW
-            result = subprocess.run(
-                ["yt-dlp", "-F", url], 
-                capture_output=True, text=True, 
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
-            formats = []
-            if "mp4" in result.stdout or "p" in result.stdout:
-                formats = ["MP3 - Sadece Ses", "Best Video (MP4)"]
-                # Basitleştirmek için en yaygın formatları ekledik
-            
-            self.res_menu.configure(values=formats)
-            self.res_var.set(formats[0])
-            self.download_btn.configure(state="normal")
-            self.status.configure(text="Seçenekler hazır.", text_color="green")
-        except:
-            self.status.configure(text="Link analiz edilemedi!", text_color="red")
+    def select_folder(self):
+        self.folder_path = filedialog.askdirectory()
+        if self.folder_path:
+            self.progress_label.configure(text="Kayıt yeri hazır.")
 
     def start_download(self):
-        threading.Thread(target=self.download_logic, daemon=True).start()
+        url = self.entry.get()
+        if not url or not self.folder_path:
+            messagebox.showwarning("Uyarı", "Link veya Klasör eksik!")
+            return
+        self.download_btn.configure(state="disabled")
+        threading.Thread(target=self.run_download, args=(url,), daemon=True).start()
 
-    def download_logic(self):
-        url = self.link_entry.get()
-        choice = self.res_var.get()
-        save_path = filedialog.askdirectory()
-        if not save_path: return
-
-        self.status.configure(text="İndirme başladı (Siyah ekran yok)...", text_color="yellow")
+    def run_download(self, url):
+        mode = self.mode_var.get()
+        # Uygulamanın olduğu klasördeki bileşenleri kullan
+        cmd = ["yt-dlp.exe", "--newline", "--progress", "--ffmpeg-location", ".", "--ignore-errors"]
         
-        try:
-            if choice == "MP3 - Sadece Ses":
-                cmd = ["yt-dlp", "-x", "--audio-format", "mp3", "-o", f"{save_path}/%(title)s.%(ext)s", url]
-            else:
-                cmd = ["yt-dlp", "-f", "bestvideo+bestaudio/best", "--merge-output-format", "mp4", "-o", f"{save_path}/%(title)s.%(ext)s", url]
+        if mode == "audio":
+            cmd += ["-x", "--audio-format", "mp3", "--embed-thumbnail", "--add-metadata", "--ppa", "thumbnailsconvertor:-vf crop='ih:ih'"]
+        else:
+            cmd += ["-f", "bestvideo+bestaudio/best", "--merge-output-format", "mp4"]
 
-            # CREATE_NO_WINDOW sayesinde CMD asla açılmaz
-            subprocess.run(cmd, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            messagebox.showinfo("Başarılı", "İşlem tamamlandı!")
-            self.status.configure(text="Tamamlandı!", text_color="green")
-        except Exception as e:
-            messagebox.showerror("Hata", "İndirme sırasında bir sorun oluştu.")
-            self.status.configure(text="Hata!", text_color="red")
+        cmd += ["-o", f"{self.folder_path}/%(title)s.%(ext)s", url]
+
+        startupinfo = None
+        if os.name == 'nt':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+                                   universal_newlines=True, startupinfo=startupinfo, encoding='utf-8')
+
+        for line in process.stdout:
+            if '[download]' in line and '%' in line:
+                try:
+                    percent_str = re.search(r'(\d+\.\d+)%', line).group(1)
+                    self.progress_bar.set(float(percent_str) / 100)
+                    self.progress_label.configure(text=f"İndiriliyor: %{percent_str}")
+                except: pass
+
+        process.wait()
+        self.download_btn.configure(state="normal")
+        if process.returncode == 0:
+            self.progress_label.configure(text="Tamamlandı!", text_color="green")
+            messagebox.showinfo("Başarılı", "İşlem bitti.")
 
 if __name__ == "__main__":
-    app = WesterosDownloader()
+    app = MegaDownloader()
     app.mainloop()
