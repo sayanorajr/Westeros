@@ -1,0 +1,26 @@
+name: EXE Olusturucu
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Python Kur
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Kutuphaneleri Yukle
+      run: |
+        pip install customtkinter pyinstaller yt-dlp
+    - name: EXE Yap
+      run: |
+        pyinstaller --noconsole --onefile downloader.py
+    - name: Dosyayi Yukle
+      uses: actions/upload-artifact@v4
+      with:
+        name: Westeros-Indirici
+        path: dist/downloader.exe
